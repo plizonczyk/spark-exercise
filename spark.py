@@ -27,7 +27,9 @@ sample = pruned.take(1)[0]
 # print(sample)
 distances = pruned.map(lambda row: cartesian_distance(row, sample))
 # pprint(pruned.collect())
-pprint(distances.collect())
+results = distances.collect()
+results.sort()
+pprint(results)
 
 # print(textFile.count())
 # pprint(filtered.collect())
