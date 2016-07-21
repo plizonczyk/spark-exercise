@@ -49,30 +49,30 @@ class KMeans:
         cost_accumulators = list(map(lambda _: sc.accumulator(0.0), active_runs))
         pprint(active_centers)
         pprint(cost_accumulators)
-        # broadcast_active_centers = sc.broadcast(active_centers)
+        broadcast_active_centers = sc.broadcast(active_centers)
 
-        # def fetch_sum_and_count_for_each_center(points):
-        #     this_active_centers = broadcast_active_centers.value
-        #     runs = len(this_active_centers)
-        #     k = len(this_active_centers[0])
-        #     dims = len(this_active_centers[0][0].vec)
-        #
-        #     sums = [[[0 for _ in range(dims)] for _ in range(k)] for _ in range(runs)]
-        #     counts = [[0 for _ in range(k)] for _ in range(runs)]
-        #
-        #     def populate(point):
-        #         for i in range(runs):
-        #             active_centers = this_active_centers(i)
-        #             (best_center, cost) = find_closest(active_centers, point)
-        #             cost_accumulators[i] += cost
-        #             # the hell are 2 lines below for
-        #             sum = sums[i][best_center]
-        #             point.vec = [x + y for x, y in zip(point.vec, sum)]
-        #             counts[i][best_center] += 1
-        #
-        #     points.foreach(populate)
+        def fetch_sum_and_count_for_each_center(points):
+            this_active_centers = broadcast_active_centers.value
+            runs = len(this_active_centers)
+            k = len(this_active_centers[0])
+            dims = len(this_active_centers[0][0].vec)
 
-        # total_contributions = rdd.mapPartitions(fetch_sum_and_count_for_each_center)
+            sums = [[[0 for _ in range(dims)] for _ in range(k)] for _ in range(runs)]
+            counts = [[0 for _ in range(k)] for _ in range(runs)]
+
+            def populate(point):
+                for i in range(runs):
+                    active_centers = this_active_centers(i)
+                    (best_center, cost) = find_closest(active_centers, point)
+                    cost_accumulators[i] += cost
+                    # the hell are 2 lines below for
+                    sum = sums[i][best_center]
+                    point.vec = [x + y for x, y in zip(point.vec, sum)]
+                    counts[i][best_center] += 1
+
+            points.foreach(populate)
+
+        total_contributions = rdd.mapPartitions(fetch_sum_and_count_for_each_center)
 
     def _random_init(self, rdd):
         # Spark uses xorbitshift, im lazy so default randomness source
