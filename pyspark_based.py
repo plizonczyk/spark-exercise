@@ -12,7 +12,7 @@ apache_logger.LogManager.getLogger("org").setLevel(apache_logger.Level.ERROR)
 apache_logger.LogManager.getLogger("akka").setLevel(apache_logger.Level.ERROR)
 
 # Create RDD
-textFile = sc.textFile("train.txt")
+textFile = sc.textFile("data/train.txt")
 splitRDD = textFile.map(lambda w: w.split('\t'))
 floatRDD = splitRDD.map(lambda w: [float(x) for x in w[0:-1]])
 
