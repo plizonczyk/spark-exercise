@@ -1,10 +1,11 @@
 import pprint as pp
 import functools as ft
+import random
 from utils import euclidean_norm
 
 
 def main():
-    """basic concept, without reducing dimensions, parallel run"""
+    """basic concept, just one cluster"""
     import findspark
     findspark.init()
 
@@ -17,25 +18,40 @@ def main():
     apache_logger.LogManager.getLogger("akka").setLevel(apache_logger.Level.ERROR)
 
     # Create RDD
-    textFile = sc.textFile("data/yeast_no_header_data.txt")\
+    floatRdd = sc.textFile("data/yeast_no_header_data.txt")\
                  .map(lambda s: s.split('\t'))\
                  .map(lambda s: list(map(float, s[1:])))
-    textFile.cache()
+    floatRdd.cache()
 
-    # def getMean(data_tuple):
-    #     name, characteristics = data_tuple
-    #     return name, euclidean_norm(characteristics)
+    # reduce dimensions
+    rowSize = len(floatRdd.first())
 
-    # map to scalars, reduce dimensions as well?
-    meansRDD = textFile.map(euclidean_norm)
+    def getCurrentDims(rowSize):
+        print('Rowsize:', rowSize)
+        workingDims = random.randint(2, rowSize)
+        indices = set()
+        for _ in range(workingDims):
+            indices.add(random.randint(0, rowSize))
+        return indices
+
+    workingDims = getCurrentDims(rowSize)
+    print('Working dims:')
+    pp.pprint(workingDims, compact=True)
+    workingDimsAmount = len(workingDims)
+    print('Working dims amount:', workingDimsAmount)
+
+    dimReducedRdd = floatRdd.map(lambda a: [a[i] for i in range(len(a)) if i in workingDims])
+    print('Reduced rowsize:', len(dimReducedRdd.first()))
+
+    # map to scalars
+    meansRDD = dimReducedRdd.map(euclidean_norm)
     print('Records:', meansRDD.count())
 
-    # take random mean
+    # take random seeds mean, should be reworked to use them concurrently instead
     quantity = 10
     sample = meansRDD.takeSample(False, quantity)
     print('sample:')
     pp.pprint(sample)
-
     sampleMean = ft.reduce(lambda a, b: a + b, sample) / quantity
     print('sampleMean', sampleMean)
 
@@ -44,9 +60,12 @@ def main():
     lowerBound = (1 - tolerance) * sampleMean
     print('bounds [', lowerBound, ',', upperBound, ']')
 
+    # Filter records
     sampleRange = meansRDD.filter(lambda a: lowerBound <= a and a <= upperBound)
     sampleAmount = sampleRange.count()
+    qualityInd = sampleAmount * workingDimsAmount
     print('Filtered samples:', sampleAmount)
+    print('Quality ind:', qualityInd)
     meanAfterIteration = sampleRange.reduce(lambda a, b: a + b) / sampleAmount
     print("new mean:", meanAfterIteration)
 
