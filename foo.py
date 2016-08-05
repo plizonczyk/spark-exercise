@@ -41,15 +41,16 @@ def main():
     print('Working dims amount:', workingDimsAmount)
 
     dimReducedRdd = floatRdd.map(lambda a: [a[i] for i in range(len(a)) if i in workingDims])
+    dimReducedRdd.cache()
     print('Reduced rowsize:', len(dimReducedRdd.first()))
 
     # amount of runs
     quantity = 10
     # take random seeds
     centroids = dimReducedRdd.takeSample(False, quantity)
-    print('sample:')
-    pp.pprint(centroids, compact=True)
-    print("Sample:", len(centroids))
+    # print('sample:')
+    # pp.pprint(centroids, compact=True)
+    # print("Sample:", len(centroids))
 
     # bound helpers
     tolerance = 0.2
@@ -65,47 +66,41 @@ def main():
         return filter_by_bounds
 
     # amount of centroid recalculations
-    n = 3
+    n = 2
+    filteredRdds = []
     for _ in range(n):
         # calculate boundaries for each centroid, filter records
-        filteredRdds = []
+        currFilteredRdds = []
         for i in range(quantity):
-            dimBounds = [(col*lowerBound, col*upperBound) for col in centroids[i]]
+            dimBounds = [(col * lowerBound, col * upperBound) for col in centroids[i]]
             filterByBounds = getFilterFunction(dimBounds)
-            filteredRdds.append(dimReducedRdd.filter(filterByBounds))
+            currFilteredRdds.append(dimReducedRdd.filter(filterByBounds))
 
-        # for rdd in distRdds:
-        #     print(rdd, "Amount:", rdd.count())
-        #     pp.pprint(rdd.take(2), compact=True)
-        #     print()
+        filteredRdds = currFilteredRdds
 
         # calculate new centroids
-        centroids = []
-        for mean, rdd in zip(centroids, filteredRdds):
+        for _ in range(quantity):
+            rdd = filteredRdds[i]
             length = rdd.count()
-            mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
-            centroids.append([x/length for x in mean])
-    print(len(centroids))
-    pp.pprint(centroids)
+            try:
+                mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
+                centroids[i] = [x/length for x in mean]
+            except ValueError:
+                print('Rdd id:', i, 'is empty')
+        print('Centroid length', len(centroids[0]))
 
-
-    # sampleMean = ft.reduce(lambda a, b: a + b, sample) / quantity
-    # print('sampleMean', sampleMean)
-    #
-    # tolerance = 0.2
-    # upperBound = (1 + tolerance) * sampleMean
-    # lowerBound = (1 - tolerance) * sampleMean
-    # print('bounds [', lowerBound, ',', upperBound, ']')
-    #
-    # # Filter records
-    # sampleRange = meansRDD.filter(lambda a: lowerBound <= a and a <= upperBound)
-    # sampleAmount = sampleRange.count()
-    # qualityInd = sampleAmount * workingDimsAmount
-    # print('Filtered samples:', sampleAmount)
-    # print('Quality ind:', qualityInd)
-    # meanAfterIteration = sampleRange.reduce(lambda a, b: a + b) / sampleAmount
-    # print("new mean:", meanAfterIteration)
-
+    qualities = []
+    for rdd in filteredRdds:
+        rowsAmount = rdd.count()
+        colsAmount = len(rdd.first()) if rowsAmount != 0 else 0
+        quality = colsAmount * rowsAmount
+        qualities.append((rdd, quality, rowsAmount, colsAmount))
+    qualities.sort(key=lambda x: x[1], reverse=True)
+    pp.pprint(qualities)
+    cache = []
+    cache.append[qualities[0]]
+    # print(len(centroids))
+    # pp.pprint(centroids)
 
 if __name__ == "__main__":
     main()
