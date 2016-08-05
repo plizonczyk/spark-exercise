@@ -34,12 +34,17 @@ def main():
             indices.add(random.randint(0, rowSize))
         return indices
 
+    def mutateDimensionSet(dimset):
+        pass
+
     workingDims = getCurrentDims(rowSize)
     print('Working dims:')
     pp.pprint(workingDims, compact=True)
     workingDimsAmount = len(workingDims)
     print('Working dims amount:', workingDimsAmount)
+    workOnDimset(workingDims, floatRdd)
 
+def workOnDimset(workingDims, floatRdd):
     dimReducedRdd = floatRdd.map(lambda a: [a[i] for i in range(len(a)) if i in workingDims])
     dimReducedRdd.cache()
     print('Reduced rowsize:', len(dimReducedRdd.first()))
@@ -97,8 +102,8 @@ def main():
         qualities.append((rdd, quality, rowsAmount, colsAmount))
     qualities.sort(key=lambda x: x[1], reverse=True)
     pp.pprint(qualities)
-    cache = []
-    cache.append[qualities[0]]
+    cachedCentroids = []
+    cachedCentroids.append(qualities[0])
     # print(len(centroids))
     # pp.pprint(centroids)
 
