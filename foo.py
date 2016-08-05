@@ -1,6 +1,7 @@
 import pprint as pp
 import functools as ft
 import random
+import math
 from utils import euclidean_distance
 
 
@@ -26,41 +27,80 @@ def main():
     # reduce dimensions
     rowSize = len(floatRdd.first())
 
-    def getCurrentDims(rowSize):
-        print('Rowsize:', rowSize)
-        workingDims = random.randint(2, rowSize)
+    def getDimset(max_index):
+        workingDims = random.randint(2, max_index)
         indices = set()
         for _ in range(workingDims):
-            indices.add(random.randint(0, rowSize))
+            indices.add(random.randint(0, max_index))
         return indices
 
-    def mutateDimensionSet(dimset):
-        pass
+    def mutateDimensionSet(rowSize, factor):
+        def mutationImpl(dimset):
+            currDimAmount = len(dimset)
+            # print('currDimAmount:', currDimAmount)
+            mutationMaxAmount = math.floor(currDimAmount * factor)
+            # print('mutationMaxAmount:', mutationMaxAmount)
+            mutation_diff = getDimset(mutationMaxAmount)
+            # print('diff_set')
+            # pp.pprint(mutation_diff, compact=True)
+            mutation_sum = getDimset(mutationMaxAmount)
+            # print('sumset')
+            # pp.pprint(mutation_sum, compact=True)
+            return (dimset - mutation_diff) | mutation_sum
+        return mutationImpl
 
-    workingDims = getCurrentDims(rowSize)
-    print('Working dims:')
-    pp.pprint(workingDims, compact=True)
-    workingDimsAmount = len(workingDims)
-    print('Working dims amount:', workingDimsAmount)
-    workOnDimset(workingDims, floatRdd)
+    mutations_amount = 5
+    # relative amount of mutations
+    factor = 0.2
+    # Standard abb
+    standard_dev = 0.2
+    # amount of centroids
+    centroids_amount = 10
+    # amount of centroid recalculations
+    n = 2
 
-def workOnDimset(workingDims, floatRdd):
-    dimReducedRdd = floatRdd.map(lambda a: [a[i] for i in range(len(a)) if i in workingDims])
+    # get seed dimension set
+    seedDimset = getDimset(rowSize)
+    workingDimsAmount = len(seedDimset)
+    print('Working dims amount:', seedDimset)
+    pp.pprint(seedDimset, compact=True)
+    mutator = mutateDimensionSet(rowSize, factor)
+    curr_dimset = seedDimset
+    dimSets = [seedDimset]
+    for index in range(mutations_amount):
+        new_dimset = mutator(curr_dimset)
+        print('Changed indices, mutaton: ', index)
+        print('Added:')
+        pp.pprint(new_dimset - curr_dimset, compact=True)
+        print('Deleted:')
+        pp.pprint((curr_dimset - new_dimset), compact=True)
+        curr_dimset = new_dimset
+        print('new_size:', len(curr_dimset))
+        dimSets.append(curr_dimset)
+
+    results = []
+    for index in range(len(dimSets)):
+        results.append((index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n)))
+    results.sort(key=lambda x: x[1])
+    print('(Mutation index, (quality, rows amount, cols amount, rdd, centroid))')
+    for result in results:
+        print(result)
+
+
+def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
+    dimReducedRdd = floatRdd.map(lambda a: [a[dim] for dim in range(len(a)) if dim in workingDims])
     dimReducedRdd.cache()
-    print('Reduced rowsize:', len(dimReducedRdd.first()))
+    # print('Reduced rowsize:', len(dimReducedRdd.first()))
 
-    # amount of runs
-    quantity = 10
     # take random seeds
-    centroids = dimReducedRdd.takeSample(False, quantity)
+    centroids = dimReducedRdd.takeSample(False, centroidsAmount)
     # print('sample:')
     # pp.pprint(centroids, compact=True)
     # print("Sample:", len(centroids))
 
     # bound helpers
-    tolerance = 0.2
-    lowerBound = 1 - tolerance
-    upperBound = 1 + tolerance
+    lowerBound = 1 - standard_dev
+    upperBound = 1 + standard_dev
 
     def getFilterFunction(dim_boundaries):
         def filter_by_bounds(record):
@@ -71,12 +111,11 @@ def workOnDimset(workingDims, floatRdd):
         return filter_by_bounds
 
     # amount of centroid recalculations
-    n = 2
     filteredRdds = []
     for _ in range(n):
         # calculate boundaries for each centroid, filter records
         currFilteredRdds = []
-        for i in range(quantity):
+        for i in range(centroidsAmount):
             dimBounds = [(col * lowerBound, col * upperBound) for col in centroids[i]]
             filterByBounds = getFilterFunction(dimBounds)
             currFilteredRdds.append(dimReducedRdd.filter(filterByBounds))
@@ -84,7 +123,7 @@ def workOnDimset(workingDims, floatRdd):
         filteredRdds = currFilteredRdds
 
         # calculate new centroids
-        for _ in range(quantity):
+        for _ in range(centroidsAmount):
             rdd = filteredRdds[i]
             length = rdd.count()
             try:
@@ -92,18 +131,17 @@ def workOnDimset(workingDims, floatRdd):
                 centroids[i] = [x/length for x in mean]
             except ValueError:
                 print('Rdd id:', i, 'is empty')
-        print('Centroid length', len(centroids[0]))
+        # print('Centroid length', len(centroids[0]))
 
     qualities = []
-    for rdd in filteredRdds:
+    for rdd, centroid in zip(filteredRdds, centroids):
         rowsAmount = rdd.count()
         colsAmount = len(rdd.first()) if rowsAmount != 0 else 0
         quality = colsAmount * rowsAmount
-        qualities.append((rdd, quality, rowsAmount, colsAmount))
-    qualities.sort(key=lambda x: x[1], reverse=True)
-    pp.pprint(qualities)
-    cachedCentroids = []
-    cachedCentroids.append(qualities[0])
+        qualities.append((quality, rowsAmount, colsAmount, rdd, centroid))
+    qualities.sort(key=lambda x: x[0], reverse=True)
+    # pp.pprint(qualities, compact=True)
+    return qualities[0]
     # print(len(centroids))
     # pp.pprint(centroids)
 
