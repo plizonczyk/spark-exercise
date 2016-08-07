@@ -1,0 +1,27 @@
+Parametry wejsciowe:
+	mutations_amount - liczba mutacji
+	factor - sila mutacji w zakresie (0, 1]
+	standard_dev - odchylenie standardowe
+	centroids_amount - liczba wejściowych centroidów
+	n -  liczba rekalkulacji centroidów
+
+Schemat dzialania:
+	1. Losowanie bazowego zestawu aktywnych wymiarow
+	2. Stworz liste mutacji i dodaj do niej bazowy zestaw wymiarow
+	2. Tworzenie mutacji
+		2.1 wez ostatni element z listy mutacji
+		2.2 wylosuj parametry ktore zostana dodane
+		2.3 wylosuj parametry ktore zostana odjete
+		2.4 dodaj mutacje do listy mutacji
+	3. Dla kazdej mutacji z listy mutacji wykonaj
+		3.1 Stworz rdd o zredukowanej liczbie wymiarow
+		3.2 Wylosuj centroidy na podstawie parametru centroids_amount
+		3.3 Dokonaj filtracji dla kazdego centroidu
+			3.2.1 Wylicz zakres akceptowanych wartosci dla kazdej kolumny na podstawie odchylenia standardowego od aktualnego centroidu
+			zakres: [1-odchylenie, 1+odchylenie]
+		3.4 Dokonaj filtracji po wierszach - wybierz te wiersze w ktorych najwieksza odchylka (po kolumnach) jest nie wieksza niz 20% wzgledem centroidu
+		3.5 Wylicz nowe centroidy na podstawie wyfiltrowanych
+		3.6 powtorz kroki 3.3 - 3.5 n razy
+		3.7 wylicz wskazniki jakosci (liczba wierszy * liczba kolumn) dla wszystkich biklastrow
+		3.8 zapamietaj biklaster o najwiekszym wskazniku jakosci
+	4. Zbierz wyniki z wszystkich mutacji i wybierz ten o najwiekszym wspolczynniku jakosci

@@ -1,6 +1,7 @@
 import pprint as pp
 import random
 import math
+from multiprocessing.pool import ThreadPool
 
 
 def main():
@@ -82,7 +83,6 @@ def main():
 
     biclusteringWorker = workOnDimsetClosure(dimSets, floatRdd, centroids_amount, standard_dev, n)
 
-    from multiprocessing.pool import ThreadPool
     tpool = ThreadPool(processes=mutations_amount)
     results = tpool.map(biclusteringWorker, range(len(dimSets)))
 
@@ -127,15 +127,24 @@ def workOnDimset(workingDims, floatRdd, centroids_amount, standard_dev, n):
 
         filteredRdds = currFilteredRdds
 
-        # calculate new centroids
-        for _ in range(centroids_amount):
-            rdd = filteredRdds[i]
-            length = rdd.count()
-            try:
-                mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
-                centroids[i] = [x/length for x in mean]
-            except ValueError:
-                print('Rdd id:', i, 'is empty')
+        def reducerWorker(rdds):
+            def reducerWorkerImpl(index):
+                rdd = rdds[index]
+                length = rdd.count()
+                try:
+                    mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
+                    meanval = [x/length for x in mean]
+                except ValueError:
+                    print('Rdd id:', index, 'is empty')
+                return index, meanval
+            return reducerWorkerImpl
+
+        worker = reducerWorker(filteredRdds)
+
+        tpool = ThreadPool(processes=centroids_amount)
+        means = tpool.map(worker, range(centroids_amount))
+        for ind, mean in means:
+            centroids[ind] = mean
 
     qualities = []
     for rdd, centroid in zip(filteredRdds, centroids):
@@ -143,8 +152,8 @@ def workOnDimset(workingDims, floatRdd, centroids_amount, standard_dev, n):
         colsAmount = len(rdd.first()) if rowsAmount != 0 else 0
         quality = colsAmount * rowsAmount
         qualities.append((quality, rowsAmount, colsAmount, rdd, centroid))
-    qualities.sort(key=lambda x: x[0], reverse=True)
-    return qualities[0]
+    ret = max(qualities, key=lambda x: x[0])
+    return ret
 
 if __name__ == "__main__":
     main()
