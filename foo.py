@@ -1,12 +1,9 @@
 import pprint as pp
-import functools as ft
 import random
 import math
-from utils import euclidean_distance
 
 
 def main():
-    """basic concept, just one cluster"""
     import findspark
     findspark.init()
 
@@ -78,9 +75,20 @@ def main():
         print('new_size:', len(curr_dimset))
         dimSets.append(curr_dimset)
 
-    results = []
-    for index in range(len(dimSets)):
-        results.append((index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n)))
+    def workOnDimsetClosure(dimSets, floatRdd, centroids_amount, standard_dev, n):
+        def closureImpl(index):
+            return (index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n))
+        return closureImpl
+
+    biclusteringWorker = workOnDimsetClosure(dimSets, floatRdd, centroids_amount, standard_dev, n)
+
+    from multiprocessing.pool import ThreadPool
+    tpool = ThreadPool(processes=mutations_amount)
+    results = tpool.map(biclusteringWorker, range(len(dimSets)))
+
+    # results = []
+    # for index in range(len(dimSets)):
+    #     results.append((index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n)))
     results.sort(key=lambda x: x[1])
     print('(Mutation index, (quality, rows amount, cols amount, rdd, centroid))')
     for result in results:
