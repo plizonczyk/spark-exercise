@@ -86,9 +86,6 @@ def main():
     tpool = ThreadPool(processes=mutations_amount)
     results = tpool.map(biclusteringWorker, range(len(dimSets)))
 
-    # results = []
-    # for index in range(len(dimSets)):
-    #     results.append((index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n)))
     results.sort(key=lambda x: x[1])
     print('(Mutation index, (quality, rows amount, cols amount, rdd, centroid))')
     for result in results:
@@ -139,7 +136,6 @@ def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
                 centroids[i] = [x/length for x in mean]
             except ValueError:
                 print('Rdd id:', i, 'is empty')
-        # print('Centroid length', len(centroids[0]))
 
     qualities = []
     for rdd, centroid in zip(filteredRdds, centroids):
@@ -148,10 +144,7 @@ def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
         quality = colsAmount * rowsAmount
         qualities.append((quality, rowsAmount, colsAmount, rdd, centroid))
     qualities.sort(key=lambda x: x[0], reverse=True)
-    # pp.pprint(qualities, compact=True)
     return qualities[0]
-    # print(len(centroids))
-    # pp.pprint(centroids)
 
 if __name__ == "__main__":
     main()
