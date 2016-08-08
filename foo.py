@@ -1,12 +1,10 @@
 import pprint as pp
-import functools as ft
 import random
 import math
-from utils import euclidean_distance
+from multiprocessing.pool import ThreadPool
 
 
 def main():
-    """basic concept, just one cluster"""
     import findspark
     findspark.init()
 
@@ -53,47 +51,54 @@ def main():
     # relative amount of mutations
     factor = 0.2
     # Standard abb
-    standard_dev = 0.2
+    standard_dev = 0.3
     # amount of centroids
-    centroids_amount = 10
+    centroids_amount = 30
     # amount of centroid recalculations
     n = 2
 
     # get seed dimension set
     seedDimset = getDimset(rowSize)
     workingDimsAmount = len(seedDimset)
-    print('Working dims amount:', seedDimset)
+    print('Base dimSet:', seedDimset)
     pp.pprint(seedDimset, compact=True)
     mutator = mutateDimensionSet(rowSize, factor)
-    curr_dimset = seedDimset
     dimSets = [seedDimset]
     for index in range(mutations_amount):
+        curr_dimset = dimSets[-1]
         new_dimset = mutator(curr_dimset)
-        print('Changed indices, mutaton: ', index)
-        print('Added:')
+        print('Mutation {} changed: '.format(index))
+        print('Added: ', end="")
         pp.pprint(new_dimset - curr_dimset, compact=True)
-        print('Deleted:')
+        print('Deleted: ', end="")
         pp.pprint((curr_dimset - new_dimset), compact=True)
         curr_dimset = new_dimset
         print('new_size:', len(curr_dimset))
         dimSets.append(curr_dimset)
 
-    results = []
-    for index in range(len(dimSets)):
-        results.append((index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n)))
-    results.sort(key=lambda x: x[1])
+    def workOnDimsetClosure(dimSets, floatRdd, centroids_amount, standard_dev, n):
+        def closureImpl(index):
+            return (index, workOnDimset(dimSets[index], floatRdd, centroids_amount, standard_dev, n))
+        return closureImpl
+
+    biclusteringWorker = workOnDimsetClosure(dimSets, floatRdd, centroids_amount, standard_dev, n)
+
+    tpool = ThreadPool(processes=mutations_amount)
+    results = tpool.map(biclusteringWorker, range(len(dimSets)))
+
+    results.sort(key=lambda x: x[1][0])
     print('(Mutation index, (quality, rows amount, cols amount, rdd, centroid))')
     for result in results:
         print(result)
 
 
-def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
+def workOnDimset(workingDims, floatRdd, centroids_amount, standard_dev, n):
     dimReducedRdd = floatRdd.map(lambda a: [a[dim] for dim in range(len(a)) if dim in workingDims])
     dimReducedRdd.cache()
     # print('Reduced rowsize:', len(dimReducedRdd.first()))
 
-    # take random seeds
-    centroids = dimReducedRdd.takeSample(False, centroidsAmount)
+    # take random centroids (seeds)
+    centroids = dimReducedRdd.takeSample(False, centroids_amount)
     # print('sample:')
     # pp.pprint(centroids, compact=True)
     # print("Sample:", len(centroids))
@@ -102,36 +107,44 @@ def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
     lowerBound = 1 - standard_dev
     upperBound = 1 + standard_dev
 
-    def getFilterFunction(dim_boundaries):
-        def filter_by_bounds(record):
-            suspect = max(zip(record, dim_boundaries), key=lambda x: x[0])
-            dim, bounds = suspect
-            lower, upper = bounds
-            return lower < dim < upper
-        return filter_by_bounds
+    def getFilterFunction(centroid, standard_dev):
+        def filterImpl(record):
+            params = [(centr_dim, abs(rec_dim - centr_dim)) for rec_dim, centr_dim in zip(record, centroid)]
+            suspect = max(params, key=lambda x: x[1])
+            dim, diff = suspect
+            return diff <= abs(dim * standard_dev)
+
+        return filterImpl
 
     # amount of centroid recalculations
     filteredRdds = []
     for _ in range(n):
         # calculate boundaries for each centroid, filter records
         currFilteredRdds = []
-        for i in range(centroidsAmount):
-            dimBounds = [(col * lowerBound, col * upperBound) for col in centroids[i]]
-            filterByBounds = getFilterFunction(dimBounds)
+        for i in range(centroids_amount):
+            filterByBounds = getFilterFunction(centroids[i], standard_dev)
             currFilteredRdds.append(dimReducedRdd.filter(filterByBounds))
 
         filteredRdds = currFilteredRdds
 
-        # calculate new centroids
-        for _ in range(centroidsAmount):
-            rdd = filteredRdds[i]
-            length = rdd.count()
-            try:
-                mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
-                centroids[i] = [x/length for x in mean]
-            except ValueError:
-                print('Rdd id:', i, 'is empty')
-        # print('Centroid length', len(centroids[0]))
+        def reducerWorker(rdds):
+            def reducerWorkerImpl(index):
+                rdd = rdds[index]
+                length = rdd.count()
+                try:
+                    mean = rdd.reduce(lambda a, b: [(x + y) for x, y in zip(a, b)])
+                    meanval = [x/length for x in mean]
+                except ValueError:
+                    print('Rdd id:', index, 'is empty')
+                return index, meanval
+            return reducerWorkerImpl
+
+        worker = reducerWorker(filteredRdds)
+
+        tpool = ThreadPool(processes=centroids_amount)
+        means = tpool.map(worker, range(centroids_amount))
+        for ind, mean in means:
+            centroids[ind] = mean
 
     qualities = []
     for rdd, centroid in zip(filteredRdds, centroids):
@@ -139,11 +152,8 @@ def workOnDimset(workingDims, floatRdd, centroidsAmount, standard_dev, n):
         colsAmount = len(rdd.first()) if rowsAmount != 0 else 0
         quality = colsAmount * rowsAmount
         qualities.append((quality, rowsAmount, colsAmount, rdd, centroid))
-    qualities.sort(key=lambda x: x[0], reverse=True)
-    # pp.pprint(qualities, compact=True)
-    return qualities[0]
-    # print(len(centroids))
-    # pp.pprint(centroids)
+    ret = max(qualities, key=lambda x: x[0])
+    return ret
 
 if __name__ == "__main__":
     main()
